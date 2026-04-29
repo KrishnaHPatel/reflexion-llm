@@ -15,47 +15,34 @@ Reflexion enables language models to learn from mistakes through **verbal reinfo
 
 ## Installation
 
+No Python packages are required beyond the standard library.
+
+Install Ollama from https://ollama.ai and pull a local model:
+
 ```bash
-pip install -r requirements.txt
+ollama pull llama3.2
 ```
 
 ## Usage
 
-### Option 1: Ollama (Free, Local)
+Run on the sample data:
 
-1. Install Ollama from https://ollama.ai
-2. Pull a model:
 ```bash
-ollama pull llama3.2
-```
-3. Run (Ollama is the default):
-```bash
-python main.py --input data/sample.jsonl --output results.jsonl
+python3 main.py --input data/sample.jsonl --output results.jsonl
 ```
 
-### Option 2: Groq (Free Tier)
-
-1. Get a free API key at https://console.groq.com
-2. Set the key and run:
-```bash
-export GROQ_API_KEY="your-key"
-python main.py --provider groq
-```
-
-### Option 3: OpenAI (Paid)
+You can choose another installed Ollama model with `--model`:
 
 ```bash
-export OPENAI_API_KEY="your-key"
-python main.py --provider openai
+python3 main.py --model mistral
 ```
 
 ### Command-line Options
 
 ```
---provider     LLM provider: ollama (free), groq (free tier), openai (paid)
 --input        Path to input JSONL file (default: data/sample.jsonl)
 --output       Path to output JSONL file (default: results.jsonl)
---model        LLM model (defaults based on provider)
+--model        Ollama model to use (default: llama3.2)
 --max-trials   Maximum trials per question (default: 3)
 --max-memory   Maximum reflections to store (default: 3)
 --temperature  Sampling temperature (default: 0.7)
@@ -104,7 +91,7 @@ JSONL file with detailed results for each question:
 ```
 reflexion-llm/
 ├── main.py          # Entry point - orchestrates the Reflexion loop
-├── llm.py           # LLM API wrapper (OpenAI-compatible)
+├── llm.py           # Ollama HTTP API wrapper
 ├── prompts.py       # Prompt templates for Actor and Reflector
 ├── evaluator.py     # Exact-match evaluation with normalization
 ├── reflexion.py     # Core Reflexion agent implementation
@@ -124,3 +111,5 @@ reflexion-llm/
   year={2023}
 }
 ```
+
+

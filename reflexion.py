@@ -59,7 +59,6 @@ class ReflexionAgent:
     def __init__(
         self,
         model: str = None,
-        provider: str = "ollama",
         max_trials: int = 3,
         max_memory: int = 3,
         temperature: float = 0.7,
@@ -68,14 +67,12 @@ class ReflexionAgent:
         Initialize the Reflexion agent.
         
         Args:
-            model: LLM model identifier (defaults based on provider)
-            provider: LLM provider - "ollama" (free), "groq" (free tier), "openai"
+            model: Ollama model name, such as "llama3.2" or "mistral"
             max_trials: Maximum attempts per question (default: 3)
             max_memory: Maximum reflections to store (default: 3)
             temperature: Sampling temperature for LLM calls
         """
         self.model = model
-        self.provider = provider
         self.max_trials = max_trials
         self.max_memory = max_memory
         self.temperature = temperature
@@ -103,7 +100,6 @@ class ReflexionAgent:
             prompt=prompt,
             system_prompt=ACTOR_SYSTEM_PROMPT,
             model=self.model,
-            provider=self.provider,
             temperature=self.temperature,
         )
         
@@ -147,7 +143,6 @@ class ReflexionAgent:
             prompt=prompt,
             system_prompt=REFLECTOR_SYSTEM_PROMPT,
             model=self.model,
-            provider=self.provider,
             temperature=self.temperature,
         )
         

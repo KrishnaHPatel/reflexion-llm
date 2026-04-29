@@ -14,7 +14,6 @@ mistakes through natural language reflection, without any weight updates.
 
 import argparse
 import json
-from pathlib import Path
 
 from reflexion import ReflexionAgent
 
@@ -107,17 +106,10 @@ def main():
         help="Path to output JSONL file for results",
     )
     parser.add_argument(
-        "--provider",
-        type=str,
-        default="ollama",
-        choices=["ollama", "groq", "openai"],
-        help="LLM provider: ollama (free), groq (free tier), openai (paid)",
-    )
-    parser.add_argument(
         "--model",
         type=str,
         default=None,
-        help="LLM model (defaults based on provider)",
+        help="Ollama model to use (default: llama3.2)",
     )
     parser.add_argument(
         "--max-trials",
@@ -146,10 +138,9 @@ def main():
     print(f"Loaded {len(data)} questions", flush=True)
     
     # Initialize agent
-    print(f"Using provider: {args.provider}", flush=True)
+    print(f"Using Ollama model: {args.model or 'llama3.2'}", flush=True)
     agent = ReflexionAgent(
         model=args.model,
-        provider=args.provider,
         max_trials=args.max_trials,
         max_memory=args.max_memory,
         temperature=args.temperature,
