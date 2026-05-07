@@ -1,102 +1,150 @@
 """
-Prompt Templates for Reflexion
+Prompt templates for CoT, ReAct, and Reflexion QA experiments.
 
-This module contains all prompt templates used by the Actor (for Chain-of-Thought
-reasoning) and the Reflector (for generating self-reflections on failures).
+The reflection prompt intentionally does NOT reveal the gold answer. It only
+provides the failed trajectory and the binary feedback signal, matching the
+Reflexion idea of turning sparse feedback into verbal lessons.
 """
 
-# System prompt for the Actor: instructs the model to use step-by-step reasoning
-ACTOR_SYSTEM_PROMPT = """You are a helpful assistant that answers questions using step-by-step reasoning.
-Think through the problem carefully before providing your final answer.
-Always end your response with your final answer on a new line in the format:
-ANSWER: <your answer>"""
+from __future__ import annotations
 
 
-def build_actor_prompt(
-    question: str,
-    context: str = "",
-    memory: list[str] = None,
-) -> str:
-    """
-    Build the prompt for the Actor to generate an answer.
-    
-    The Actor uses Chain-of-Thought style reasoning. If there are past reflections
-    in memory, they are included to help avoid previous mistakes.
-    
-    Args:
-        question: The question to answer
-        context: Optional context/passage to help answer the question
-        memory: List of past reflections from failed attempts
-    
-    Returns:
-        The formatted prompt string
-    """
-    prompt_parts = []
-    
-    # Include past reflections if available
-    if memory and len(memory) > 0:
-        prompt_parts.append("Here are reflections from your previous attempts:\n")
-        for i, reflection in enumerate(memory, 1):
-            prompt_parts.append(f"Reflection {i}: {reflection}\n")
-        prompt_parts.append("\nUse these reflections to avoid repeating mistakes.\n\n")
-    
-    # Include context if provided
+COT_SYSTEM_PROMPT = """You are a careful question-answering assistant.
+Use concise step-by-step reasoning, then end with exactly one final line:
+ANSWER: <short answer>"""
+
+
+REACT_SYSTEM_PROMPT = """You are a ReAct question-answering agent.
+You solve questions by alternating brief reasoning with exactly one action.
+Available actions:
+- Search[query]: search the provided context/retrieval environment.
+- Lookup[string]: look up a specific string in the current or provided context.
+- Finish[answer]: submit the final short answer.
+
+At every step, respond with exactly this format:
+Thought: <brief reasoning about what to do next>
+Action: <Search[...] or Lookup[...] or Finish[...]>
+
+Do not answer outside the Action field."""
+
+
+REFLECTOR_SYSTEM_PROMPT = """You are a self-reflection module for a QA agent.
+Given a failed attempt and only a failure signal, write a concise first-person
+lesson that can help the agent avoid the same mistake next trial.
+Do not invent the gold answer. Focus on strategy: what to inspect, compare,
+search, or reason about differently."""
+
+
+COT_FEW_SHOT = """Example 1:
+Question: What profession does John Lanchester and Alan Dean Foster have in common?
+Context:
+John Lanchester is a British novelist, journalist, and critic. Alan Dean Foster is an American novelist and screenwriter.
+Reasoning: John Lanchester is listed as a novelist. Alan Dean Foster is also listed as a novelist. The common profession is novelist.
+ANSWER: novelist
+
+Example 2:
+Question: Which magazine was started first, Arthur's Magazine or First for Women?
+Context:
+Arthur's Magazine was an American literary periodical published from 1844 to 1846. First for Women is a magazine started in 1989.
+Reasoning: Arthur's Magazine started in 1844. First for Women started in 1989. Since 1844 is earlier than 1989, Arthur's Magazine came first.
+ANSWER: Arthur's Magazine
+"""
+
+
+REACT_FEW_SHOT = """Example ReAct trajectory:
+Question: What profession does John Lanchester and Alan Dean Foster have in common?
+Thought: I need to find each person's profession and compare them.
+Action: Search[John Lanchester Alan Dean Foster profession]
+Observation: John Lanchester is a British novelist, journalist, and critic. Alan Dean Foster is an American novelist and screenwriter.
+Thought: Both people are described as novelists, so the shared profession is novelist.
+Action: Finish[novelist]
+
+Example ReAct trajectory:
+Question: Which magazine was started first, Arthur's Magazine or First for Women?
+Thought: I need the start dates for both magazines.
+Action: Search[Arthur's Magazine First for Women started]
+Observation: Arthur's Magazine was published from 1844 to 1846. First for Women was started in 1989.
+Thought: 1844 is earlier than 1989, so Arthur's Magazine started first.
+Action: Finish[Arthur's Magazine]
+"""
+
+
+REFLECTION_FEW_SHOT = """Example failed attempt:
+Question: Which of two people is older?
+Trajectory: I only checked one birth year and guessed the other.
+Feedback: Answer is INCORRECT.
+Reflection: I failed because I did not verify both entities before comparing them. Next time, I should explicitly find evidence for each entity, compare the relevant values, and only then finish.
+
+Example failed attempt:
+Question: What role was an actor best known for?
+Trajectory: I searched the show title, found a different actor, and finished with that actor's role.
+Feedback: Answer is INCORRECT.
+Reflection: I likely followed the wrong entity. Next time, I should identify the actor from the question/context first, then search or inspect evidence for that specific actor's role before answering.
+"""
+
+
+def _format_memory(memory: list[str] | None) -> str:
+    if not memory:
+        return ""
+    lines = ["Reflections from previous failed trials:"]
+    for i, reflection in enumerate(memory, 1):
+        lines.append(f"{i}. {reflection}")
+    return "\n".join(lines) + "\n\nUse these reflections, but still answer from the evidence.\n\n"
+
+
+def build_cot_prompt(question: str, context: str = "", memory: list[str] | None = None, include_few_shot: bool = True) -> str:
+    parts = []
+    if include_few_shot:
+        parts.append(COT_FEW_SHOT.strip() + "\n\n")
+    parts.append(_format_memory(memory))
     if context:
-        prompt_parts.append(f"Context:\n{context}\n\n")
-    
-    # Add the question
-    prompt_parts.append(f"Question: {question}\n\n")
-    prompt_parts.append("Think step by step, then provide your final answer.")
-    
-    return "".join(prompt_parts)
+        parts.append(f"Context:\n{context}\n\n")
+    parts.append(f"Question: {question}\n")
+    parts.append("Reason step by step, then provide the final answer as `ANSWER: <short answer>`.")
+    return "".join(parts)
 
 
-# System prompt for the Reflector: instructs the model to analyze failures
-REFLECTOR_SYSTEM_PROMPT = """You are a thoughtful assistant that helps improve reasoning by reflecting on mistakes.
-When given a failed attempt at answering a question, analyze what went wrong and provide 
-specific, actionable advice for how to answer correctly next time.
-Be concise but specific. Focus on the reasoning error, not just that the answer was wrong."""
+def build_react_prompt(
+    question: str,
+    trajectory: str = "",
+    memory: list[str] | None = None,
+    include_few_shot: bool = True,
+) -> str:
+    parts = []
+    if include_few_shot:
+        parts.append(REACT_FEW_SHOT.strip() + "\n\n")
+    parts.append(_format_memory(memory))
+    parts.append(f"Question: {question}\n")
+    if trajectory:
+        parts.append(trajectory.rstrip() + "\n")
+    parts.append("Next step:")
+    return "".join(parts)
 
 
 def build_reflector_prompt(
     question: str,
-    context: str,
+    trajectory: str,
     model_answer: str,
-    correct_answer: str,
-    reasoning: str,
+    feedback: str = "Answer is INCORRECT.",
+    context: str = "",
+    include_few_shot: bool = True,
 ) -> str:
-    """
-    Build the prompt for the Reflector to generate a self-reflection.
-    
-    The Reflector analyzes a failed attempt and generates natural language
-    feedback explaining what went wrong and how to improve.
-    
-    Args:
-        question: The original question
-        context: The context provided (if any)
-        model_answer: The incorrect answer the model gave
-        correct_answer: The correct answer
-        reasoning: The model's reasoning trace from the failed attempt
-    
-    Returns:
-        The formatted prompt string
-    """
-    prompt_parts = [
-        "A previous attempt to answer this question was incorrect.\n\n",
-        f"Question: {question}\n\n",
-    ]
-    
+    parts = []
+    if include_few_shot:
+        parts.append(REFLECTION_FEW_SHOT.strip() + "\n\n")
+    parts.append("A QA attempt failed. Reflect on the failed attempt without using the gold answer.\n\n")
+    parts.append(f"Question: {question}\n\n")
     if context:
-        prompt_parts.append(f"Context: {context}\n\n")
-    
-    prompt_parts.extend([
-        f"Previous reasoning:\n{reasoning}\n\n",
-        f"Previous answer: {model_answer}\n",
-        f"Correct answer: {correct_answer}\n\n",
-        "Reflect on why the previous attempt was wrong. ",
-        "What was the key mistake in the reasoning? ",
-        "What should be done differently next time to get the correct answer? ",
-        "Be specific and concise.",
-    ])
-    
-    return "".join(prompt_parts)
+        parts.append(f"Available context/retrieval source:\n{context}\n\n")
+    parts.append(f"Failed trajectory or reasoning:\n{trajectory}\n\n")
+    parts.append(f"Submitted answer: {model_answer}\n")
+    parts.append(f"Feedback: {feedback}\n\n")
+    parts.append("Write one concise first-person reflection with an actionable strategy for the next trial.")
+    return "".join(parts)
+
+
+# Backward-compatible aliases for your original code names.
+ACTOR_SYSTEM_PROMPT = COT_SYSTEM_PROMPT
+
+def build_actor_prompt(question: str, context: str = "", memory: list[str] | None = None) -> str:
+    return build_cot_prompt(question=question, context=context, memory=memory)

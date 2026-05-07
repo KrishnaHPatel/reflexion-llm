@@ -1,115 +1,98 @@
-# Reflexion Reasoning Baseline
+# CoT / Reflexion / ReAct QA Baseline
 
-A minimal Python implementation of the Reflexion paper's reasoning baseline (Shinn et al., NeurIPS 2023).
+This is an updated implementation of the reasoning parts of the ReAct and Reflexion papers.
+It intentionally does **not** implement the programming/coding Reflexion pipeline yet.
 
-## Overview
+## What is implemented
 
-Reflexion enables language models to learn from mistakes through **verbal reinforcement** - storing natural language reflections in memory to improve subsequent attempts, without any weight updates.
+- `cot`: Chain-of-Thought QA baseline.
+- `reflexion`: Chain-of-Thought + verbal reflection memory after failed trials.
+- `react`: ReAct-style `Search[...]`, `Lookup[...]`, `Finish[...]` loop over the example's `context` field.
+- `react-reflexion`: ReAct plus verbal reflection memory after failed trials.
+- Exact match and token-level F1 evaluation.
+- Built-in few-shot prompts.
+- Result analyzer for comparing runs.
 
-### Components
+## Important design choice
 
-- **Actor**: Generates answers using Chain-of-Thought reasoning, conditioned on past reflections
-- **Evaluator**: Compares model answers to gold answers using exact match (after normalization)
-- **Reflector**: Analyzes failed attempts and generates actionable reflections
-- **Memory**: Stores up to 3 reflections to guide future trials
+The reflector does **not** receive the gold answer. It receives only:
 
-## Installation
+- the question,
+- the failed reasoning or trajectory,
+- the submitted answer,
+- binary feedback: `Answer is INCORRECT.`
 
-No Python packages are required beyond the standard library.
+This avoids leaking the correct answer into the next trial.
 
-Install Ollama from https://ollama.ai and pull a local model:
+## Files
+
+```text
+main.py              # CLI runner
+reflexion.py         # unified agent implementation
+react_env.py         # offline Search/Lookup/Finish environment over context
+prompts.py           # CoT, ReAct, and reflection prompts
+evaluator.py         # exact match + token F1
+llm.py               # Ollama HTTP wrapper
+analyze_results.py   # result analysis script
+sample.jsonl         # simple examples
+hotpotqa_sample.jsonl# context-rich examples
+requirements.txt     # no external deps
+```
+
+## Setup
+
+Install Ollama and pull a model:
 
 ```bash
 ollama pull llama3.2
 ```
 
-## Usage
+Make sure Ollama is running locally.
 
-Run on the sample data:
+## Run examples
 
-```bash
-python3 main.py --input data/sample.jsonl --output results.jsonl
-```
-
-You can choose another installed Ollama model with `--model`:
+CoT baseline:
 
 ```bash
-python3 main.py --model mistral
+python main.py --input hotpotqa_sample.jsonl --output results_cot.jsonl --mode cot
 ```
 
-### Command-line Options
+CoT + Reflexion:
 
-```
---input        Path to input JSONL file (default: data/sample.jsonl)
---output       Path to output JSONL file (default: results.jsonl)
---model        Ollama model to use (default: llama3.2)
---max-trials   Maximum trials per question (default: 3)
---max-memory   Maximum reflections to store (default: 3)
---temperature  Sampling temperature (default: 0.7)
+```bash
+python main.py --input hotpotqa_sample.jsonl --output results_reflexion.jsonl --mode reflexion
 ```
 
-## Input Format
+ReAct baseline:
 
-JSONL file with one question per line:
+```bash
+python main.py --input hotpotqa_sample.jsonl --output results_react.jsonl --mode react
+```
+
+ReAct + Reflexion:
+
+```bash
+python main.py --input hotpotqa_sample.jsonl --output results_react_reflexion.jsonl --mode react-reflexion
+```
+
+Analyze multiple runs:
+
+```bash
+python analyze_results.py results_cot.jsonl results_reflexion.jsonl results_react.jsonl results_react_reflexion.jsonl
+```
+
+Show failures:
+
+```bash
+python analyze_results.py results_react_reflexion.jsonl --show-failures
+```
+
+## Input format
+
+Each JSONL row should look like:
+
 ```json
-{"question": "What is the capital of France?", "answer": "Paris"}
-{"question": "Who wrote Hamlet?", "answer": "Shakespeare", "context": "Optional context..."}
+{"question": "...", "answer": "...", "context": "optional evidence text"}
 ```
 
-## Output Format
-
-JSONL file with detailed results for each question:
-```json
-{
-  "question": "...",
-  "gold_answer": "...",
-  "final_answer": "...",
-  "solved": true,
-  "num_trials": 2,
-  "trials": [
-    {
-      "trial_number": 1,
-      "model_answer": "...",
-      "is_correct": false,
-      "reasoning": "...",
-      "reflection": "..."
-    },
-    {
-      "trial_number": 2,
-      "model_answer": "...",
-      "is_correct": true,
-      "reasoning": "...",
-      "reflection": ""
-    }
-  ],
-  "memory": ["reflection from trial 1"]
-}
-```
-
-## Project Structure
-
-```
-reflexion-llm/
-├── main.py          # Entry point - orchestrates the Reflexion loop
-├── llm.py           # Ollama HTTP API wrapper
-├── prompts.py       # Prompt templates for Actor and Reflector
-├── evaluator.py     # Exact-match evaluation with normalization
-├── reflexion.py     # Core Reflexion agent implementation
-├── data/
-│   └── sample.jsonl # Sample questions for testing
-├── requirements.txt
-└── README.md
-```
-
-## Reference
-
-```
-@inproceedings{shinn2023reflexion,
-  title={Reflexion: Language Agents with Verbal Reinforcement Learning},
-  author={Shinn, Noah and Cassano, Federico and Gopinath, Ashwin and Narasimhan, Karthik and Yao, Shunyu},
-  booktitle={NeurIPS},
-  year={2023}
-}
-```
-
-
+For ReAct modes, `context` acts as the retrieval environment. Without context, `Search[...]` and `Lookup[...]` will not have useful evidence.
