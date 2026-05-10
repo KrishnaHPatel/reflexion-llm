@@ -83,6 +83,62 @@ Reflection: I likely followed the wrong entity. Next time, I should identify the
 """
 
 
+STRUCTURED_REFLECTION_FEW_SHOT = """Example failed attempt:
+Question: Which of two people is older?
+Trajectory: I only checked one birth year and guessed the other.
+Feedback: Answer is INCORRECT.
+Reflection:
+Error: I guessed the comparison without verifying both entities.
+Cause: I used incomplete evidence and did not explicitly compare the relevant values.
+Fix: Find evidence for each entity, compare the values directly, then finish with the entity that matches the question.
+
+Example failed attempt:
+Question: What role was an actor best known for?
+Trajectory: I searched the show title, found a different actor, and finished with that actor's role.
+Feedback: Answer is INCORRECT.
+Reflection:
+Error: I followed the wrong entity.
+Cause: I did not first identify the actor named or implied by the question.
+Fix: Identify the relevant actor first, then search or inspect evidence for that actor's role before answering.
+"""
+
+
+POLICY_REFLECTION_FEW_SHOT = """Example failed attempt:
+Question: Which of two people is older?
+Trajectory: I only checked one birth year and guessed the other.
+Feedback: Answer is INCORRECT.
+Reflection: Always verify both entities and compare the requested attribute directly before answering.
+
+Example failed attempt:
+Question: What role was an actor best known for?
+Trajectory: I searched the show title, found a different actor, and finished with that actor's role.
+Feedback: Answer is INCORRECT.
+Reflection: Identify the target entity first, then retrieve evidence about that exact entity.
+"""
+
+
+COMPRESSED_REFLECTION_FEW_SHOT = """Example failed attempt:
+Question: Which of two people is older?
+Trajectory: I only checked one birth year and guessed the other.
+Feedback: Answer is INCORRECT.
+Reflection: Verify both entities before comparing.
+
+Example failed attempt:
+Question: What role was an actor best known for?
+Trajectory: I searched the show title, found a different actor, and finished with that actor's role.
+Feedback: Answer is INCORRECT.
+Reflection: Identify actor before role lookup.
+"""
+
+
+REFLECTION_FEW_SHOTS = {
+    "freeform": REFLECTION_FEW_SHOT,
+    "structured": STRUCTURED_REFLECTION_FEW_SHOT,
+    "policy": POLICY_REFLECTION_FEW_SHOT,
+    "compressed": COMPRESSED_REFLECTION_FEW_SHOT,
+}
+
+
 def _format_memory(memory: list[str] | None) -> str:
     if not memory:
         return ""
@@ -128,10 +184,12 @@ def build_reflector_prompt(
     feedback: str = "Answer is INCORRECT.",
     context: str = "",
     include_few_shot: bool = True,
+    reflection_type: str = "freeform",
 ) -> str:
     parts = []
     if include_few_shot:
-        parts.append(REFLECTION_FEW_SHOT.strip() + "\n\n")
+        few_shot = REFLECTION_FEW_SHOTS.get(reflection_type, REFLECTION_FEW_SHOT)
+        parts.append(few_shot.strip() + "\n\n")
     parts.append("A QA attempt failed. Reflect on the failed attempt without using the gold answer.\n\n")
     parts.append(f"Question: {question}\n\n")
     if context:
@@ -139,7 +197,24 @@ def build_reflector_prompt(
     parts.append(f"Failed trajectory or reasoning:\n{trajectory}\n\n")
     parts.append(f"Submitted answer: {model_answer}\n")
     parts.append(f"Feedback: {feedback}\n\n")
-    parts.append("Write one concise first-person reflection with an actionable strategy for the next trial.")
+    if reflection_type == "structured":
+        parts.append(
+            "Write the reflection in exactly this format, with concise actionable content:\n"
+            "Error: <what went wrong>\n"
+            "Cause: <why it happened>\n"
+            "Fix: <what to do differently next trial>"
+        )
+    elif reflection_type == "policy":
+        parts.append(
+            "Extract one reusable reasoning policy that would help avoid similar mistakes "
+            "in future tasks. Write one concise rule, not a task-specific answer."
+        )
+    elif reflection_type == "compressed":
+        parts.append(
+            "Write a compressed reflection in at most 12 words that captures the key lesson."
+        )
+    else:
+        parts.append("Write one concise first-person reflection with an actionable strategy for the next trial.")
     return "".join(parts)
 
 

@@ -2,10 +2,10 @@
 Main entry point for CoT, Reflexion, ReAct, and ReAct+Reflexion QA runs.
 
 Usage examples:
-    python main.py --input sample.jsonl --output results_cot.jsonl --mode cot
-    python main.py --input hotpotqa_sample.jsonl --output results_reflexion.jsonl --mode reflexion
-    python main.py --input hotpotqa_sample.jsonl --output results_react.jsonl --mode react
-    python main.py --input hotpotqa_sample.jsonl --output results_react_reflexion.jsonl --mode react-reflexion
+    python3 main.py --input data/hotpotqa_sample.jsonl --output results_cot.jsonl --mode cot
+    python3 main.py --input data/hotpotqa_sample.jsonl --output results_reflexion.jsonl --mode reflexion
+    python3 main.py --input data/hotpotqa_sample.jsonl --output results_react.jsonl --mode react
+    python3 main.py --input data/hotpotqa_sample.jsonl --output results_react_reflexion.jsonl --mode react-reflexion
 
 This script does not implement the coding/programming Reflexion pipeline.
 """
@@ -67,6 +67,7 @@ def result_to_dict(result: ReflexionResult) -> dict:
         "gold_answer": result.gold_answer,
         "context": result.context,
         "mode": result.mode,
+        "reflection_type": result.reflection_type,
         "final_answer": result.final_answer,
         "solved": result.solved,
         "num_trials": len(result.trials),
@@ -117,7 +118,7 @@ def print_summary(summary: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run QA agents: CoT, Reflexion, ReAct, ReAct+Reflexion")
-    parser.add_argument("--input", type=str, default="sample.jsonl", help="Input JSONL with question, answer, optional context")
+    parser.add_argument("--input", type=str, default="data/sample.jsonl", help="Input JSONL with question, answer, optional context")
     parser.add_argument("--output", type=str, default="results.jsonl", help="Output JSONL path")
     parser.add_argument(
         "--mode",
@@ -127,6 +128,13 @@ def main() -> None:
         help="Agent mode to run",
     )
     parser.add_argument("--model", type=str, default=None, help="Ollama model name, e.g. llama3.2 or mistral")
+    parser.add_argument(
+        "--reflection-type",
+        type=str,
+        choices=["freeform", "structured", "policy", "compressed"],
+        default="freeform",
+        help="Reflection memory format for reflexion modes",
+    )
     parser.add_argument("--max-trials", type=int, default=3, help="Maximum trials per question")
     parser.add_argument("--max-memory", type=int, default=3, help="Maximum reflections in memory")
     parser.add_argument("--max-react-steps", type=int, default=6, help="Maximum Search/Lookup/Finish steps per ReAct trial")
@@ -139,11 +147,13 @@ def main() -> None:
     data = load_data(args.input)
     print(f"Loaded {len(data)} questions", flush=True)
     print(f"Mode: {args.mode}", flush=True)
+    print(f"Reflection type: {args.reflection_type}", flush=True)
     print(f"Using Ollama model: {args.model or 'llama3.2'}", flush=True)
 
     agent = ReflexionAgent(
         model=args.model,
         mode=args.mode,
+        reflection_type=args.reflection_type,
         max_trials=args.max_trials,
         max_memory=args.max_memory,
         max_react_steps=args.max_react_steps,
