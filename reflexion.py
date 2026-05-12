@@ -29,6 +29,7 @@ from react_env import ContextSearchEnvironment
 
 
 AgentMode = Literal["cot", "reflexion", "react", "react-reflexion"]
+ReflectionType = Literal["freeform", "structured", "policy", "compressed"]
 
 
 @dataclass
@@ -52,6 +53,7 @@ class ReflexionResult:
     gold_answer: str
     context: str
     mode: str
+    reflection_type: str
     trials: list[TrialResult] = field(default_factory=list)
     final_answer: str = ""
     solved: bool = False
@@ -62,11 +64,13 @@ class ReflexionAgent:
     """QA agent supporting CoT, ReAct, and optional Reflexion memory."""
 
     VALID_MODES = {"cot", "reflexion", "react", "react-reflexion"}
+    VALID_REFLECTION_TYPES = {"freeform", "structured", "policy", "compressed"}
 
     def __init__(
         self,
         model: str | None = None,
         mode: AgentMode = "reflexion",
+        reflection_type: ReflectionType = "freeform",
         max_trials: int = 3,
         max_memory: int = 3,
         max_react_steps: int = 6,
@@ -76,9 +80,15 @@ class ReflexionAgent:
     ):
         if mode not in self.VALID_MODES:
             raise ValueError(f"Unsupported mode {mode!r}. Choose one of {sorted(self.VALID_MODES)}")
+        if reflection_type not in self.VALID_REFLECTION_TYPES:
+            raise ValueError(
+                f"Unsupported reflection_type {reflection_type!r}. "
+                f"Choose one of {sorted(self.VALID_REFLECTION_TYPES)}"
+            )
 
         self.model = model
         self.mode = mode
+        self.reflection_type = reflection_type
         self.max_trials = max_trials
         self.max_memory = max_memory
         self.max_react_steps = max_react_steps
@@ -164,8 +174,9 @@ class ReflexionAgent:
                 break
 
         if not final_answer:
-            # If the model never called Finish, still try to recover an answer.
-            final_answer = extract_answer(trajectory_text)
+            # In ReAct, only Finish[...] submits an answer. If the model never
+            # finishes, leave the answer empty instead of scoring an observation.
+            final_answer = ""
 
         return trajectory_text, final_answer, structured_steps
 
@@ -183,6 +194,7 @@ class ReflexionAgent:
             model_answer=model_answer,
             feedback="Answer is INCORRECT.",
             include_few_shot=self.include_few_shot,
+            reflection_type=self.reflection_type,
         )
         return call_llm(
             prompt=prompt,
@@ -198,6 +210,7 @@ class ReflexionAgent:
             gold_answer=gold_answer,
             context=context,
             mode=self.mode,
+            reflection_type=self.reflection_type,
         )
         memory: list[str] = []
 
