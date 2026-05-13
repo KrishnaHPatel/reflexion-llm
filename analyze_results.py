@@ -2,8 +2,15 @@
 Analyze JSONL outputs from main.py.
 
 Usage:
+    # Analyze all default experiment outputs
+    python analyze_results.py
+
+    # Analyze specific files only
     python analyze_results.py results_reflexion.jsonl
     python analyze_results.py results_cot.jsonl results_reflexion.jsonl results_react_reflexion.jsonl
+
+    # Show failures too
+    python analyze_results.py --show-failures
 """
 
 from __future__ import annotations
@@ -11,6 +18,17 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+
+
+DEFAULT_RESULT_FILES = [
+    "results_cot.jsonl",
+    "results_react.jsonl",
+    "results_react_compressed.jsonl",
+    "results_react_policy.jsonl",
+    "results_react_reflexion.jsonl",
+    "results_react_structured.jsonl",
+    "results_reflexion.jsonl",
+]
 
 
 def load_results(path: str) -> list[dict]:
@@ -25,10 +43,12 @@ def load_results(path: str) -> list[dict]:
 
 def summarize(rows: list[dict]) -> dict:
     total = len(rows)
+
     first_try = sum(1 for r in rows if r.get("first_try_correct"))
     solved_after = sum(1 for r in rows if r.get("solved_after_first_try"))
     solved = sum(1 for r in rows if r.get("solved"))
     failed = total - solved
+
     avg_trials = sum(r.get("num_trials", 0) for r in rows) / total if total else 0.0
     avg_best_f1 = sum(r.get("best_f1", 0.0) for r in rows) / total if total else 0.0
 
@@ -36,6 +56,7 @@ def summarize(rows: list[dict]) -> dict:
     for row in rows:
         for trial in row.get("trials", []):
             all_trial_f1.append(trial.get("evaluation", {}).get("f1", 0.0))
+
     avg_trial_f1 = sum(all_trial_f1) / len(all_trial_f1) if all_trial_f1 else 0.0
 
     return {
@@ -55,9 +76,19 @@ def summarize(rows: list[dict]) -> dict:
 
 def print_table(summaries: list[tuple[str, dict]]) -> None:
     headers = [
-        "file", "n", "first_EM", "final_EM", "gain", "avg_best_F1", "avg_trials", "failed"
+        "file",
+        "n",
+        "first_EM",
+        "final_EM",
+        "gain",
+        "avg_best_F1",
+        "avg_trial_F1",
+        "avg_trials",
+        "failed",
     ]
+
     print("\t".join(headers))
+
     for name, s in summaries:
         print("\t".join([
             name,
@@ -66,6 +97,7 @@ def print_table(summaries: list[tuple[str, dict]]) -> None:
             f"{s['final_em']:.3f}",
             f"{s['gain_over_first_try']:.3f}",
             f"{s['avg_best_f1']:.3f}",
+            f"{s['avg_trial_f1']:.3f}",
             f"{s['avg_trials']:.2f}",
             str(s["failed"]),
         ]))
@@ -73,16 +105,40 @@ def print_table(summaries: list[tuple[str, dict]]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze QA agent result JSONL files")
-    parser.add_argument("paths", nargs="+", help="One or more result JSONL files")
-    parser.add_argument("--show-failures", action="store_true", help="Print failed questions and final answers")
+
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        help="One or more result JSONL files. If omitted, all default result files are analyzed.",
+    )
+
+    parser.add_argument(
+        "--show-failures",
+        action="store_true",
+        help="Print failed questions and final answers",
+    )
+
     args = parser.parse_args()
+
+    paths = args.paths if args.paths else DEFAULT_RESULT_FILES
 
     summaries = []
     all_rows_by_path = {}
-    for path in args.paths:
+
+    for path in paths:
+        path_obj = Path(path)
+
+        if not path_obj.exists():
+            print(f"Warning: skipping missing file: {path}")
+            continue
+
         rows = load_results(path)
-        summaries.append((Path(path).name, summarize(rows)))
+        summaries.append((path_obj.name, summarize(rows)))
         all_rows_by_path[path] = rows
+
+    if not summaries:
+        print("No result files found.")
+        return
 
     print_table(summaries)
 
