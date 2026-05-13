@@ -20,9 +20,11 @@ from prompts import (
     COT_SYSTEM_PROMPT,
     REACT_SYSTEM_PROMPT,
     REFLECTOR_SYSTEM_PROMPT,
+    REACT_FINALIZER_SYSTEM_PROMPT,
     build_cot_prompt,
     build_react_prompt,
     build_reflector_prompt,
+    build_react_finalizer_prompt,
 )
 
 from react_env import ContextSearchEnvironment
@@ -132,6 +134,44 @@ class ReflexionAgent:
             max_tokens=self.max_tokens,
         )
         return response, extract_answer(response), []
+    
+    def _force_final_answer_from_trajectory(
+        self,
+        question: str,
+        context: str,
+        trajectory: str,
+    ) -> tuple[str, str]:
+        """
+        Fallback for ReAct when the agent never emits Finish[...].
+
+        This makes one final LLM call that converts the accumulated trajectory
+        into a required ANSWER: <short answer> format.
+        """
+        prompt = build_react_finalizer_prompt(
+            question=question,
+            context=context,
+            trajectory=trajectory,
+        )
+
+        response = call_llm(
+            prompt=prompt,
+            system_prompt=REACT_FINALIZER_SYSTEM_PROMPT,
+            model=self.model,
+            temperature=0.0,
+            max_tokens=min(self.max_tokens, 256),
+        )
+
+        answer = extract_answer(response)
+
+        # Keep both the original trajectory and the forced finalizer output.
+        combined_reasoning = (
+            trajectory.rstrip()
+            + "\n\n"
+            + "[Forced final answer fallback]\n"
+            + response.strip()
+        )
+
+        return combined_reasoning, answer
 
     def _generate_react_answer(self, question: str, context: str, memory: list[str]) -> tuple[str, str, list[dict]]:
         env = ContextSearchEnvironment(context=context)
@@ -174,9 +214,27 @@ class ReflexionAgent:
                 break
 
         if not final_answer:
-            # In ReAct, only Finish[...] submits an answer. If the model never
-            # finishes, leave the answer empty instead of scoring an observation.
-            final_answer = ""
+            # If ReAct never emitted Finish[...], force one final answer
+            # from the accumulated trajectory and context.
+            forced_reasoning, forced_answer = self._force_final_answer_from_trajectory(
+                question=question,
+                context=context,
+                trajectory=trajectory_text,
+            )
+
+            trajectory_text = forced_reasoning
+            final_answer = forced_answer
+
+            structured_steps.append(
+                {
+                    "step_number": "forced_finalizer",
+                    "llm_response": forced_reasoning,
+                    "action": "FORCED_FINAL_ANSWER",
+                    "action_type": "finalizer",
+                    "argument": "",
+                    "observation": f"Forced final answer: {forced_answer}",
+                }
+            )
 
         return trajectory_text, final_answer, structured_steps
 
